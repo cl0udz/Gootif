@@ -6,7 +6,7 @@ define('SERVICE_KEY', 'REPLACE_WITH_YOUR_SERVICE_KEY');
 define('APP_KEY', 'REPLACE_WITH_YOUR_APP_KEY');
 // Best: point this OUTSIDE the webroot (e.g. dirname(__DIR__) . '/gootif-data/gootif.db')
 // so the DB can never be served over HTTP. If it stays inside, /data/ is blocked
-// by .htaccess rules — see server/README.md.
+// by .htaccess rules — see DEPLOYMENT.md.
 define('DB_PATH', __DIR__ . '/data/gootif.db');
 
 function json_response($data, int $status = 200): void {
