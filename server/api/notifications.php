@@ -14,6 +14,21 @@ if ($method === 'POST' && !$id) {
         json_response(['error' => '"service" and "title" are required'], 400);
     }
 
+    // Generous caps — agent reports live in metadata and can be large, but
+    // nothing legitimate in this ecosystem exceeds these.
+    if (!is_string($data['service']) || strlen($data['service']) > 100) {
+        json_response(['error' => '"service" must be a string of at most 100 bytes'], 400);
+    }
+    if (!is_string($data['title']) || strlen($data['title']) > 500) {
+        json_response(['error' => '"title" must be a string of at most 500 bytes'], 400);
+    }
+    if (isset($data['body']) && (!is_string($data['body']) || strlen($data['body']) > 65536)) {
+        json_response(['error' => '"body" must be a string of at most 64 KB'], 400);
+    }
+    if (isset($data['metadata']) && !is_array($data['metadata'])) {
+        json_response(['error' => '"metadata" must be a JSON object'], 400);
+    }
+
     $id = bin2hex(random_bytes(16));
     $now = gmdate('Y-m-d\TH:i:s\Z');
     $priority = $data['priority'] ?? 'medium';
@@ -21,6 +36,12 @@ if ($method === 'POST' && !$id) {
         $priority = 'medium';
     }
     $metadata = isset($data['metadata']) ? json_encode($data['metadata']) : '{}';
+    if ($metadata === false) {
+        json_response(['error' => '"metadata" could not be encoded (too deeply nested?)'], 400);
+    }
+    if (strlen($metadata) > 1048576) {
+        json_response(['error' => '"metadata" must encode to at most 1 MB'], 400);
+    }
 
     $pdo = get_db();
     $stmt = $pdo->prepare("

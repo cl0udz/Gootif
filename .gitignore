@@ -13,8 +13,9 @@ server/agents/.env
 server/agents/google-mcp.json
 Gootif/Services/Secrets.swift
 
-# Server runtime data
-server/data/
+# Server runtime data (keep the deny-all .htaccess tracked)
+server/data/*
+!server/data/.htaccess
 
 # Python
 __pycache__/

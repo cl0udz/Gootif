@@ -1,0 +1,4 @@
+# Belt-and-braces: the root .htaccess already forbids /data/ via mod_rewrite,
+# but this holds even if those rewrite rules are ever lost or reordered.
+# (Preferred fix: keep the DB outside the webroot entirely — see server/README.md.)
+Require all denied
