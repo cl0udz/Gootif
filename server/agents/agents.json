@@ -1,0 +1,31 @@
+{
+  "premarket-brief": {
+    "service": "premarket-brief",
+    "kind": "news_feed",
+    "model": "claude-opus-4-8",
+    "prompt": "prompts/premarket-brief.md",
+    "allowed_tools": ["WebSearch", "WebFetch", "Task"]
+  },
+  "inbox-digest": {
+    "service": "inbox-digest",
+    "kind": "task_digest",
+    "model": "claude-opus-4-8",
+    "prompt": "prompts/inbox-digest.md",
+    "mcp_config": "google-mcp.json",
+    "allowed_tools": [
+      "mcp__google-workspace__search_gmail_messages",
+      "mcp__google-workspace__get_gmail_message_content",
+      "mcp__google-workspace__get_gmail_thread_content",
+      "mcp__google-workspace__list_gmail_labels",
+      "mcp__google-workspace__list_calendars",
+      "mcp__google-workspace__get_events"
+    ]
+  },
+  "llm-security": {
+    "service": "llm-security",
+    "kind": "security_feed",
+    "model": "claude-opus-4-8",
+    "prompt": "prompts/llm-security.md",
+    "allowed_tools": ["WebSearch", "WebFetch", "Task"]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to google-mcp.json and adapt to the Google Workspace MCP server you install. The READ-ONLY guarantee comes from the OAuth scopes you grant during auth (gmail.readonly + calendar.readonly) — see README. The agents.json allowed_tools list is a second layer: only read tools are ever permitted. Tool names below must match your server's actual tool names; update agents.json -> inbox-digest.allowed_tools to match.",
+  "mcpServers": {
+    "google-workspace": {
+      "command": "uvx",
+      "args": ["workspace-mcp", "--tools", "gmail", "calendar"],
+      "env": {
+        "GOOGLE_OAUTH_CLIENT_ID": "REPLACE_WITH_YOUR_CLIENT_ID.apps.googleusercontent.com",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "REPLACE_WITH_YOUR_CLIENT_SECRET",
+        "USER_GOOGLE_EMAIL": "you@gmail.com",
+        "GOOGLE_MCP_CREDENTIALS_DIR": "/home/youruser/.google-workspace-mcp"
+      }
+    }
+  }
+}

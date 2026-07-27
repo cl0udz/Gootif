@@ -1,0 +1,13 @@
+# Gootif agent schedule. Install with:  crontab crontab.example
+# (edit the path below first). Timezone is pinned so 6am means 6am Pacific.
+CRON_TZ=America/Los_Angeles
+
+# --- agents ---  (adjust the absolute path to this directory)
+# Agent 1: pre-market financial brief, weekdays at 6:00 AM PST/PDT
+0 6 * * 1-5 /home/youruser/Gootif/server/agents/run.sh premarket-brief
+
+# Agent 2: inbox + calendar digest, every day at 7:00 AM
+0 7 * * *   /home/youruser/Gootif/server/agents/run.sh inbox-digest
+
+# Agent 3: LLM security roundup, every day at 8:00 AM
+0 8 * * *   /home/youruser/Gootif/server/agents/run.sh llm-security

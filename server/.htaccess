@@ -1,0 +1,9 @@
+RewriteEngine On
+
+# API routes
+RewriteRule ^api/notifications/?$ api/notifications.php [L,QSA]
+RewriteRule ^api/notifications/(.+)$ api/notifications.php?id=$1 [L,QSA]
+RewriteRule ^api/services/?$ api/services.php [L,QSA]
+
+# Block direct access to data directory
+RewriteRule ^data/ - [F,L]
