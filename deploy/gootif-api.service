@@ -17,6 +17,7 @@ ProtectHome=true
 ProtectSystem=strict
 # /var/lib/gootif — DB_PATH in gootif.env must live here.
 StateDirectory=gootif
+StateDirectoryMode=0750
 
 [Install]
 WantedBy=multi-user.target
