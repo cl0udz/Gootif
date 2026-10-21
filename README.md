@@ -1,9 +1,10 @@
 # Gootif Server
 
 Self-hosted push notification hub: home-lab services and scheduled Claude
-agents post to this tiny PHP + SQLite API, and native client apps render the
+agents post to this small Rust + SQLite API, and native client apps render the
 feed — from one-line cron alerts up to rich, structured agent reports
-(pre-market briefs, inbox digests, LLM security news).
+(pre-market briefs, inbox digests, LLM security news). New notifications are
+pushed to iOS/macOS devices through APNs.
 
 This repo is the **server + agents**. The clients live in their own repos:
 
@@ -12,10 +13,10 @@ This repo is the **server + agents**. The clients live in their own repos:
 - [Gootif-Windows](https://github.com/cl0udz/Gootif-Windows) — Windows app
 
 ```
-┌─────────────────┐     POST /api/notifications      ┌──────────────────┐
-│ services & cron │  ────────────────────────────▶   │  this repo       │
-│ (X-Service-Key) │                                  │  PHP + SQLite    │
-└─────────────────┘                                  └──────────────────┘
+┌─────────────────┐     POST /api/notifications      ┌──────────────────┐   APNs   ┌──────────┐
+│ services & cron │  ────────────────────────────▶   │  gootif (Rust)   │ ───────▶ │ iPhone / │
+│ (X-Service-Key) │                                  │  + SQLite        │          │ Mac      │
+└─────────────────┘                                  └──────────────────┘          └──────────┘
 ┌─────────────────┐              ▲                            │
 │ Claude agents   │──────────────┘                GET (X-API-Key)
 │ (claude -p cron)│                                           ▼
@@ -29,21 +30,22 @@ This repo is the **server + agents**. The clients live in their own repos:
 
 | Path | What it is |
 |------|------------|
-| `api/` | Endpoints: `POST/GET/DELETE /api/notifications`, `GET /api/services` — contract in [API.md](API.md) |
-| `config.example.php` | Copy to `config.php`, fill in the two keys (service = write, app = read/delete) |
+| `server/` | The `gootif` binary: `gootif serve` (HTTP API) and `gootif push-worker` (APNs delivery). Contract in [API.md](API.md) |
+| `deploy/` | systemd units, Apache reverse-proxy vhost, and `gootif.env.example` |
 | `agents/` | Headless Claude Code agents run by cron (`run.sh` → `runner.py` → `claude -p`), posting structured reports. See [agents/README.md](agents/README.md) and [agents/REPORTS.md](agents/REPORTS.md) |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Webroot layout, hardening, and outside-in verification probes |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Build, install, hardening, and outside-in verification probes |
 
 ## Quick start
 
 ```bash
-cp config.example.php config.php
-# fill in two random keys:  php -r "echo bin2hex(random_bytes(24)), PHP_EOL;"
+cd server && cargo build --release        # → target/release/gootif
+cp ../deploy/gootif.env.example gootif.env
+# fill in two random keys (openssl rand -hex 24) and point DB_PATH somewhere writable
+GOOTIF_CONFIG=gootif.env ./target/release/gootif serve --listen 127.0.0.1:18090
 ```
 
-Upload everything **except `agents/`** (and never a real `.env`) to an Apache
-webroot with PHP 8+, mod_rewrite, and HTTPS — details in
-[DEPLOYMENT.md](DEPLOYMENT.md).
+Production runs both processes under systemd behind an HTTPS reverse proxy —
+details in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Send a notification:
 
@@ -68,8 +70,26 @@ structured `payload`; clients pick a native renderer per kind (`news_feed`,
 `task_digest`, `security_feed`) and fall back to a generic detail view for
 unknown kinds.
 
+## Tests
+
+```bash
+cd server && cargo test
+```
+
+Covers the HTTP contract (auth, validation, paging, devices) against an
+in-memory database, plus push-queue bookkeeping and the APNs payload shape.
+
+## History
+
+The server was originally PHP. On 2026-10-21 it was replaced by this Rust
+binary in response to php2shell (CVE-2026-109618/109619). The HTTP contract
+and the SQLite schema are unchanged, so clients and existing databases work
+as-is. Before cut-over both implementations ran side by side on copies of the
+production DB and agreed on all 53 request/response and DB-state checks, and
+both push workers were checked against APNs sandbox and production.
+
 ## Secrets
 
-Real keys never live in git. `config.php`, `agents/.env`, and
+Real keys never live in git. `gootif.env`, `agents/.env`, and
 `agents/google-mcp.json` are gitignored — copy each from its `.example`
 sibling and fill in your values.

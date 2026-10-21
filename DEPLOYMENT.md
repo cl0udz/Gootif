@@ -1,67 +1,72 @@
 # Gootif Server — Deployment & Hardening
 
-The PHP API lives at the webroot of `gootif.jianwei.me` (Apache 2.4 / Ubuntu).
-This doc records what belongs on the web server, what must never be there, and
-how to verify the deployment from the outside.
+`gootif.jianwei.me` runs the `gootif` binary behind Apache 2.4 on Ubuntu.
+Apache terminates TLS and proxies `/api/` to the API on `127.0.0.1:18090`;
+nothing is served from disk. A second process delivers APNs pushes.
 
-## What to deploy under the webroot
+## Build
 
-Only these paths should exist on the web server:
-
-```
-webroot/
-├── .htaccess          # routes + HTTPS/HSTS + deny rules
-├── config.php         # copied from config.example.php, real keys — NEVER in git
-├── db.php
-├── api/
-│   ├── notifications.php
-│   └── services.php
-└── data/              # only if DB_PATH stays inside the webroot (see below)
-    └── .htaccess      # "Require all denied"
+```bash
+cd server
+cargo build --release --locked
+cargo test
 ```
 
-**Never upload `agents/`.** It belongs on the machine that runs the cron jobs
-(it contains `.env` with the service key and `google-mcp.json` with OAuth
-secrets). Apache does *not* block `.env` files by default — only `.ht*`.
-The root `.htaccess` forbids `agents/` and all dotfiles as a safety net, but
-the real protection is not putting secrets on the web server at all.
+Building on the server needs only `rustup` (minimal profile) and `gcc`.
+SQLite is compiled in (`rusqlite` `bundled`) and TLS is rustls, so the binary
+has no runtime library dependencies beyond glibc.
 
-## Database location
+## Install
 
-Preferred: keep the SQLite DB **outside** the webroot so it can never be
-served over HTTP regardless of Apache config. In `config.php`:
+```bash
+sudo install -m 755 server/target/release/gootif /usr/local/bin/gootif
 
-```php
-define('DB_PATH', dirname(__DIR__) . '/gootif-data/gootif.db');
+sudo install -d -m 750 -o root -g www-data /etc/gootif
+sudo install -m 640 -o root -g www-data deploy/gootif.env.example /etc/gootif/gootif.env
+sudoedit /etc/gootif/gootif.env          # keys: openssl rand -hex 24
+# APNs: put AuthKey_*.p8 in /etc/gootif (root:www-data 640) and set APNS_*.
+
+sudo install -m 644 deploy/gootif-api.service deploy/gootif-push.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now gootif-api gootif-push
 ```
 
-When moving an existing DB, move all three files while the API is idle:
-`gootif.db`, `gootif.db-wal`, `gootif.db-shm` (WAL companions).
+Both units run as `www-data` with `ProtectSystem=strict`. The only writable
+path is `StateDirectory=gootif` → `/var/lib/gootif`, so `DB_PATH` must point
+there (default `/var/lib/gootif/gootif.db`). The DB is SQLite in WAL mode;
+when moving it, stop both units and move all three files
+(`gootif.db`, `gootif.db-wal`, `gootif.db-shm`).
 
-If the DB stays inside the webroot, two independent layers block it:
-the root `.htaccess` (`RewriteRule ^data/ - [F,L]`) and `data/.htaccess`
-(`Require all denied`).
+The push worker takes an exclusive lock on `DB_PATH.push.lock`, so a second
+worker refuses to start. With `APNS_ENABLED=0` it exits immediately and
+notifications are stored without being pushed.
 
-## Apache requirements
+Upgrading: build, `install` the new binary over `/usr/local/bin/gootif`, then
+`sudo systemctl restart gootif-api gootif-push`.
 
-- `AllowOverride FileInfo AuthConfig` (or `All`) for the webroot, so both
-  `.htaccess` files are honored. **If `.htaccess` were ignored, API routes
-  would 404 — so a working API implies the deny rules are active too.**
-- `mod_rewrite` enabled (routing depends on it).
-- `mod_headers` enabled for HSTS / nosniff (rules are `<IfModule>`-wrapped,
-  so nothing breaks without it — the headers are just silently missing).
-- PHP handler active. If PHP is ever disabled, `config.php` would be served
-  as source, keys included — another reason to keep keys out of the webroot
-  where possible, and to re-run the verification below after server changes.
-- `display_errors=Off` in production php.ini (`db.php` also forces it off
-  and installs a generic-500 exception handler as a second layer).
+## Apache
+
+`deploy/apache-gootif.conf` is the whole vhost: HTTP→HTTPS redirect, TLS,
+`ProxyPass /api/ http://127.0.0.1:18090/api/`, HSTS + `nosniff`, and an
+empty `DocumentRoot` with `Options -Indexes`. Requires `mod_proxy`,
+`mod_proxy_http`, `mod_rewrite`, `mod_ssl`, and (for the headers) `mod_headers`.
+
+```bash
+sudo install -d -m 755 /var/www/gootif-public
+sudo install -m 644 deploy/apache-gootif.conf /etc/apache2/sites-available/gootif.conf
+sudo a2ensite gootif && sudo apache2ctl configtest && sudo systemctl reload apache2
+```
+
+**Never put `agents/` or any secret on the web server.** `agents/` belongs
+on the machine that runs the cron jobs (it contains `.env` with the service
+key and `google-mcp.json` with OAuth secrets). The API is a separate process,
+so the webroot holds no code and no keys at all.
 
 ## HTTPS
 
-The vhost 301-redirects HTTP→HTTPS, and the root `.htaccess` does the same
-(portable across hosts). HSTS (`Strict-Transport-Security: max-age=31536000`)
-pins clients to HTTPS afterwards. iOS ATS requires TLS regardless — clients
-should only ever be configured with `https://` URLs.
+The vhost 301-redirects HTTP→HTTPS. HSTS (`max-age=31536000`) pins clients to
+HTTPS afterwards. iOS ATS requires TLS regardless — clients should only ever be
+configured with `https://` URLs.
 
 ## Verifying a deployment
 
@@ -69,23 +74,25 @@ Run from any machine; expected results on a healthy deployment:
 
 ```bash
 BASE=https://gootif.jianwei.me
-curl -s -o /dev/null -w '%{http_code}\n' $BASE/agents/.env          # 404 (not deployed) or 403
-curl -s -o /dev/null -w '%{http_code}\n' $BASE/data/gootif.db       # 403 (or 404 if DB moved out)
+curl -s -o /dev/null -w '%{http_code}\n' $BASE/                     # 403/404 — no directory listing
 curl -s -o /dev/null -w '%{http_code}\n' $BASE/.env                 # 403/404, never 200
-curl -s -o /dev/null -w '%{http_code}\n' $BASE/config.php           # 200 with 0 bytes (PHP executes, no output)
+curl -s -o /dev/null -w '%{http_code}\n' $BASE/agents/.env          # 403/404, never 200
 curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://gootif.jianwei.me/api/services   # 301 → https
 curl -s $BASE/api/services | head -c 100                            # {"error":"Unauthorized"} without a key
 curl -sI $BASE/api/services | grep -i strict-transport              # HSTS header present
 ```
 
-Last verified against the live server: 2026-07-27 (agents/ absent, data/
-blocked, PHP executing, HTTP→HTTPS redirect active; HSTS added in this
-revision — re-verify after deploying).
+On the server:
+
+```bash
+systemctl is-active gootif-api gootif-push
+journalctl -u gootif-api -u gootif-push -n 20
+```
 
 ## API
 
-See [API.md](API.md). Request limits enforced by `api/notifications.php`:
+See [API.md](API.md). Request limits enforced by the API:
 `service` ≤ 100 B, `title` ≤ 500 B, `body` ≤ 64 KB, `metadata` ≤ 1 MB encoded
-and must be a JSON object. Generous on purpose — agent reports ride in
-`metadata` — while still bounding what a leaked service key could stuff into
-the DB.
+and must be a JSON object; `POST /api/devices` bodies ≤ 4 KB. Generous on
+purpose — agent reports ride in `metadata` — while still bounding what a
+leaked service key could stuff into the DB.

@@ -2,13 +2,18 @@
 .DS_Store
 
 # Secrets — never commit real keys
-config.php
+gootif.env
 agents/.env
 agents/google-mcp.json
+*.p8
 
-# Server runtime data (keep the deny-all .htaccess tracked)
-data/*
-!data/.htaccess
+# Rust build output
+server/target/
+
+# Local SQLite databases
+*.db
+*.db-wal
+*.db-shm
 
 # Python
 __pycache__/

@@ -104,9 +104,9 @@ grant the read-only scopes. Tokens are cached so cron runs unattended.
   phone instead of silent nothing.
 
 ## Delivery
-v1 is pull: reports appear when you open/refresh the app. APNs push is a clean
-follow-up (the server already stores everything; add a device-token table + an
-APNs send after each insert in `../api/notifications.php`).
+Every posted report is stored and also pushed through APNs to registered
+iOS/macOS devices (`gootif push-worker`, see [../DEPLOYMENT.md](../DEPLOYMENT.md)).
+The push carries only service + title; the app fetches the full report.
 
 ## Troubleshooting
 - `claude CLI not found` → set `CLAUDE_BIN` in `.env` (`which claude`).

@@ -129,10 +129,56 @@ Suggested names:
 - `cron` — scheduled job results
 - `security` — auth failures, intrusion alerts
 
+## Limits
+
+`service` ≤ 100 bytes, `title` ≤ 500 bytes, `body` ≤ 64 KB, `metadata` must be
+a JSON object and encode to ≤ 1 MB. An unknown `priority` falls back to `medium`.
+
+## Client endpoints (X-API-Key)
+
+The apps authenticate with the read/delete key instead:
+
+```
+X-API-Key: YOUR_APP_KEY
+```
+
+| Method & path | Result |
+|---------------|--------|
+| `GET /api/notifications` | Newest first. Query: `service`, `since` (ISO timestamp, exclusive), `limit` (default 50, max 200), `offset` |
+| `GET /api/notifications/{id}` | One notification, or `404` |
+| `DELETE /api/notifications/{id}` | `204`, or `404` if it does not exist |
+| `GET /api/services` | `[{"name", "notification_count", "last_notification_at"}]`, most recent first |
+| `POST /api/devices` | Register an APNs device token (below) |
+
+`metadata` is always returned as a JSON object.
+
+### Device registration
+
+```json
+{
+  "installation_id": "3f2b8c1e-0000-4000-8000-0000000000aa",
+  "platform": "ios",
+  "topic": "com.goosheys.gootif",
+  "environment": "production",
+  "token": "<hex APNs device token>"
+}
+```
+
+- `platform` is `ios` or `macos`, and `topic` must be that platform's bundle ID.
+- `environment` is `development` (APNs sandbox) or `production`.
+- `{"installation_id": "...", "enabled": false}` stops pushes to that installation.
+- Returns `{"enabled": true|false}`, or `503` when push is not configured on the server.
+- The body may be at most 4 KB.
+
 ## Error Responses
+
+All errors are JSON: `{"error": "..."}`.
 
 | Status | Meaning |
 |--------|---------|
-| `400` | Missing `service` or `title`, or invalid JSON |
-| `401` | Invalid or missing `X-Service-Key` |
-| `405` | Wrong HTTP method (must be POST) |
+| `400` | Missing `service` or `title`, a field over its limit, invalid device data, or invalid JSON |
+| `401` | Invalid or missing `X-Service-Key` / `X-API-Key` |
+| `404` | Notification not found |
+| `405` | Wrong HTTP method for the endpoint |
+| `413` | Request body too large |
+| `503` | Push notifications are not configured (`POST /api/devices` only) |
