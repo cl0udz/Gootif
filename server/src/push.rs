@@ -298,7 +298,8 @@ pub async fn run_worker(cfg: &Config, once: bool) -> Result<(), BoxError> {
             return Ok(());
         }
         if !worked {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            // Short idle poll keeps queue-to-APNs latency well under a second.
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 }
