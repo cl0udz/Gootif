@@ -88,6 +88,7 @@ struct Job {
     service: Option<String>,
     title: Option<String>,
     priority: Option<String>,
+    metadata: Option<String>,
     token: Option<String>,
     topic: Option<String>,
     environment: Option<String>,
@@ -105,6 +106,24 @@ impl SendResult {
     }
 }
 
+/// The link an alert's tap should open, so the app need not fetch the message first.
+/// Only explicit fields qualify; the app finds links in the text itself after fetching.
+fn push_link(metadata: Option<&str>) -> Option<String> {
+    let metadata: Value = serde_json::from_str(metadata?).ok()?;
+    let metadata = metadata.as_object()?;
+    if metadata.contains_key("kind") {
+        return None; // Reports open in the app.
+    }
+    ["url", "link", "href", "buy_url", "product_url"].iter().find_map(|key| {
+        let value = metadata.get(*key)?.as_str()?;
+        let lower = value.to_ascii_lowercase();
+        let rest = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://"))?;
+        // The cap keeps the payload well inside APNs' 4 KB limit.
+        let valid = value.len() <= 1024 && !rest.is_empty() && !value.chars().any(char::is_whitespace);
+        valid.then(|| value.to_string())
+    })
+}
+
 fn payload(job: &Job) -> String {
     let service = job.service.clone().unwrap_or_default();
     // Titles are already capped at 500 bytes. Omit body/metadata (reports can be 1 MB).
@@ -114,7 +133,11 @@ fn payload(job: &Job) -> String {
     if job.priority.as_deref() == Some("high") {
         aps.insert("sound".into(), json!("default"));
     }
-    json!({"aps": aps, "notification_id": job.nid}).to_string()
+    let mut root = json!({"aps": aps, "notification_id": job.nid});
+    if let Some(link) = push_link(job.metadata.as_deref()) {
+        root["link"] = json!(link);
+    }
+    root.to_string()
 }
 
 pub struct Sender<'a> {
@@ -196,7 +219,7 @@ impl<'a> Sender<'a> {
         let job = conn
             .query_row(
                 "SELECT j.id, j.notification_id, j.installation_id, j.device_version, j.attempts, j.expires_at,
-                    n.id, n.service, n.title, n.priority, d.token, d.topic, d.environment
+                    n.id, n.service, n.title, n.priority, d.token, d.topic, d.environment, n.metadata
                 FROM push_jobs j
                 LEFT JOIN push_devices d ON d.installation_id = j.installation_id
                     AND d.version = j.device_version AND d.active = 1
@@ -218,6 +241,7 @@ impl<'a> Sender<'a> {
                         token: r.get(10)?,
                         topic: r.get(11)?,
                         environment: r.get(12)?,
+                        metadata: r.get(13)?,
                     })
                 },
             )
@@ -352,6 +376,7 @@ mod tests {
             service: Some("nas".into()),
             title: Some("Backup done".into()),
             priority: Some("high".into()),
+            metadata: None,
             token: None,
             topic: None,
             environment: None,
@@ -362,5 +387,20 @@ mod tests {
             "notification_id": "n1"
         });
         assert_eq!(v, want);
+
+        let buy = "https://www.apple.com/shop/buy-iphone/iphone-duo?x=1";
+        let link = |metadata: Value| push_link(Some(&metadata.to_string()));
+        assert_eq!(link(json!({"url": buy})).as_deref(), Some(buy));
+        assert_eq!(link(json!({"link": "javascript:alert(1)", "buy_url": buy})).as_deref(), Some(buy));
+        assert_eq!(link(json!({"url": "javascript:alert(1)"})), None);
+        assert_eq!(link(json!({"url": format!("https://a.example/{}", "x".repeat(2000))})), None);
+        assert_eq!(link(json!({"kind": "news_feed", "url": buy})), None);
+        assert_eq!(link(json!({"url": 5})), None);
+        assert_eq!(push_link(Some("not json")), None);
+
+        let with_link = Job { metadata: Some(json!({"url": buy, "payload": "secret"}).to_string()), ..job };
+        let v: Value = serde_json::from_str(&payload(&with_link)).unwrap();
+        assert_eq!(v["link"], buy);
+        assert!(v.get("metadata").is_none() && !payload(&with_link).contains("secret"));
     }
 }

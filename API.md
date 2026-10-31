@@ -26,7 +26,7 @@ X-Service-Key: YOUR_SERVICE_KEY
 | `title` | string | **Yes** | — | Short summary of the notification |
 | `body` | string | No | `""` | Detailed message content |
 | `priority` | string | No | `"medium"` | One of: `low`, `medium`, `high` |
-| `metadata` | object | No | `{}` | Arbitrary key-value pairs for extra context |
+| `metadata` | object | No | `{}` | Arbitrary key-value pairs for extra context. An http(s) `url` (or `link`, `href`, `buy_url`, `product_url`) of at most 1024 bytes is included in the push, and tapping the push opens it directly |
 
 ### Priority Guidelines
 
